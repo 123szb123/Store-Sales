@@ -23,6 +23,8 @@ import seaborn as sns
 from sklearn.linear_model import LinearRegression, Ridge
 from scipy.signal import periodogram
 from statsmodels.tsa.deterministic import DeterministicProcess, CalendarFourier # For modeling trends and seasonal features
+from lightgbm import LGBMRegressor
+
 
 # %%
 # Datasets
@@ -114,18 +116,16 @@ preprocessor = ColumnTransformer(
 
 model_pipeline = Pipeline(steps=[
     ('preprocessor', preprocessor),
-    ('regressor', Ridge(alpha=1.0))
+    ('regressor', LGBMRegressor(
+        objective='regression', 
+        n_estimators=500, # how many small trees to build
+        learning_rate=0.05, # how big each tree's contribution is. A contribution is a small step towards the final prediction
+        subsample=0.8, # randomly select 80% of data to train each tree to prevent overfitting
+        colsample_bytree=0.8, # each tree sees a random 80% of features
+        random_state=67 
+    ))
 ]) # what this does is first preprocess the data then eventually fit the model
 
-# %%
-X = df.drop('sales',axis=1)
-y = df['sales']
-
-from sklearn.model_selection import train_test_split # split data into training and cross-validation sets
-
-X_train, X_cv, y_train, y_cv = train_test_split(X,y, test_size=0.3, random_state=57)
-
-# %%
 df_model = df_model.sort_values('date') # ensure chronological order
 
 feature_cols = categorical_features + numeric_features # columns we want the model to see
@@ -139,7 +139,7 @@ cutoff_date = dates.quantile(0.8) # 80 percent cutoff date for training vs valid
 # so if we had 100 days of data, the first 80 days would be training and last 20 days would be used for validation
 
 train_mask = dates <= cutoff_date # training data is dates on or before cutoff date so the first ~80%
-cv_mask    = dates > cutoff_date # cross-validation data is dates after cutoff date so the last ~20%
+cv_mask = dates > cutoff_date # cross-validation data is dates after cutoff date so the last ~20%
 
 X_train = X_all[train_mask] # these are training features
 y_train = y_all[train_mask] # training targets 
