@@ -184,3 +184,55 @@ val_rows[cols_to_save].to_csv("val_predictions_lightgbm.csv", index=False) # sav
 
 print("\nSaved model to lightgbm_model.joblib")
 print("Saved validation predictions to val_predictions_lightgbm.csv")
+
+# --- 1. Load the saved validation predictions ---
+# Reading the CSV ensures the analysis is clean and independent of the model training steps
+try:
+    val_rows = pd.read_csv("val_predictions_lightgbm.csv")
+except FileNotFoundError:
+    print("Error: 'val_predictions_lightgbm.csv' not found. Ensure the model run completed.")
+    exit()
+
+# --- 2. Prepare Data and Error Metric ---
+
+# Ensure date column is in datetime format and add date parts for grouping
+val_rows["date"] = pd.to_datetime(val_rows["date"])
+val_rows["month"] = val_rows["date"].dt.month
+val_rows["dayofweek"] = val_rows["date"].dt.dayofweek
+val_rows["weekday_vs_weekend"] = np.where(val_rows["dayofweek"] >= 5, "Weekend", "Weekday")
+
+# Calculate the squared log error for each row
+val_rows["squared_log_error"] = (
+    np.log1p(val_rows["sales"]) - np.log1p(val_rows["pred_sales"])
+)**2
+
+# --- 3. Define Analysis Function ---
+
+def analyze_error_by_group(df, group_col, n_display=10):
+    """Calculates and displays the RMSLE and count for each unique value in group_col."""
+    
+    grouped_msle = df.groupby(group_col)["squared_log_error"].mean()
+    grouped_rmsle = np.sqrt(grouped_msle).to_frame(name="RMSLE")
+    grouped_rmsle["Count"] = df.groupby(group_col).size()
+    grouped_rmsle = grouped_rmsle.sort_values(by="RMSLE", ascending=False)
+    
+    print(f"\n### Validation RMSLE Broken Down by **{group_col}**")
+    print(f"Top {n_display} Worst Performers:")
+    print(grouped_rmsle.head(n_display).to_markdown())
+    print("---------------------------------")
+    print(f"Top {n_display} Best Performers:")
+    print(grouped_rmsle.tail(n_display).to_markdown())
+
+# --- 4. Run Analysis for All Required Groups ---
+
+# Breakdown by Store
+analyze_error_by_group(val_rows, "store_nbr")
+
+# Breakdown by Family
+analyze_error_by_group(val_rows, "family")
+
+# Breakdown by Month
+analyze_error_by_group(val_rows, "month")
+
+# Breakdown by Weekend vs Weekday
+analyze_error_by_group(val_rows, "weekday_vs_weekend")
